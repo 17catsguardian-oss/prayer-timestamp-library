@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 from supabase import create_client, Client
 
 st.set_page_config(page_title="🕊️ Prayer Library", layout="centered")
@@ -12,33 +12,59 @@ try:
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except:
-    st.error("⚠️ Database not connected. Add Supabase secrets in Settings.")
+    st.error("⚠️ Database not connected.")
     st.stop()
 
 # Search Section
 st.header("🔍 Search Video")
-url = st.text_input("YouTube URL")
-query = st.text_input("Search word (e.g., 'healing')")
+url = st.text_input("YouTube URL (Pastor Jerry Eze)")
+query = st.text_input("Search word (e.g., 'healing', 'down syndrome')")
 
 if st.button("Search"):
     if url and query:
         match = re.search(r'(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})', url)
         if match:
             video_id = match.group(1)
-            try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id)
-                st.success("✅ Found captions!")
-                
-                for seg in transcript[:3]:  # Show first 3 matches
-                    if query.lower() in seg['text'].lower():
-                        sec = int(seg['start'])
-                        link = f"https://youtu.be/{video_id}?t={sec}"
-                        st.markdown(f"⏱️ **{sec//60}:{sec%60:02d}** - {seg['text'][:100]}...")
-                        st.link_button("🔗 Watch", link)
-            except:
-                st.error("❌ No captions available")
+            with st.spinner("🔍 Fetching captions..."):
+                try:
+                    # Try to get transcript (works for live & regular videos)
+                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+                    
+                    # Search for matches
+                    matches = []
+                    query_lower = query.lower()
+                    
+                    for seg in transcript:
+                        text = seg.get('text', '').lower()
+                        if query_lower in text:
+                            sec = int(seg.get('start', 0))
+                            matches.append({
+                                'time': f"{sec//60:02d}:{sec%60:02d}",
+                                'text': seg.get('text', ''),
+                                'link': f"https://youtu.be/{video_id}?t={sec}"
+                            })
+                            if len(matches) >= 3:
+                                break
+                    
+                    if matches:
+                        st.success(f"✅ Found {len(matches)} match(es)!")
+                        for m in matches:
+                            with st.container(border=True):
+                                st.markdown(f"⏱️ **{m['time']}**")
+                                st.write(f"*{m['text']}*")
+                                st.link_button("🔗 Watch on YouTube", m['link'])
+                    else:
+                        st.warning(f"🔍 No matches for '{query}' in this video")
+                        
+                except TranscriptsDisabled:
+                    st.error("❌ Captions are disabled for this video")
+                except NoTranscriptFound:
+                    st.error("❌ No captions found. Try again in 1-3 hours after the live stream ends.")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
         else:
-            st.error("Invalid URL")
+            st.error("Invalid YouTube URL")
 
+st.divider()
 st.header("📚 Community Library")
-st.write("Coming soon - submit your prayer moments!")
+st.info("Coming soon - submit and browse prayer moments!")
