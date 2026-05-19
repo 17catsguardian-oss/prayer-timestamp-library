@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 from supabase import create_client, Client
 
 st.set_page_config(page_title="🕊️ Prayer Library", layout="centered")
@@ -12,7 +12,7 @@ try:
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except:
-    st.error("⚠️ Database not connected.")
+    st.error("️ Database not connected.")
     st.stop()
 
 # Search Section
@@ -25,16 +25,25 @@ if st.button("Search"):
         match = re.search(r'(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})', url)
         if match:
             video_id = match.group(1)
-            with st.spinner("🔍 Fetching captions..."):
+            with st.spinner("🔍 Fetching captions (this may take a moment)..."):
                 try:
-                    # Try to get transcript (works for live & regular videos)
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+                    # Use list_transcripts which is more robust
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    
+                    # Try to find manual transcript first, then generated
+                    try:
+                        transcript = transcript_list.find_manually_created_transcript(['en', 'en-US'])
+                    except NoTranscriptFound:
+                        transcript = transcript_list.find_generated_transcript(['en', 'en-US'])
+                    
+                    # Fetch the actual data
+                    transcript_data = transcript.fetch()
                     
                     # Search for matches
                     matches = []
                     query_lower = query.lower()
                     
-                    for seg in transcript:
+                    for seg in transcript_data:
                         text = seg.get('text', '').lower()
                         if query_lower in text:
                             sec = int(seg.get('start', 0))
@@ -50,7 +59,7 @@ if st.button("Search"):
                         st.success(f"✅ Found {len(matches)} match(es)!")
                         for m in matches:
                             with st.container(border=True):
-                                st.markdown(f"⏱️ **{m['time']}**")
+                                st.markdown(f"️ **{m['time']}**")
                                 st.write(f"*{m['text']}*")
                                 st.link_button("🔗 Watch on YouTube", m['link'])
                     else:
